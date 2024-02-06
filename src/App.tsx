@@ -45,6 +45,20 @@ const lieswithinmouse = (x, y, element) => {
 const distance = (a, b) =>
   Math.sqrt(Math.pow(a.x - b.x, 2) + Math.pow(a.y - b.y, 2));
 
+const changeCoordinates = (element) => {
+  const { x1, y1, x2, y2, type } = element;
+  if (type === "Rectangle") {
+    const minX = Math.min(x1, x2);
+    const minY = Math.min(y1, y2);
+    const maxX = Math.max(x1, x2);
+    const maxY = Math.max(y1, y2);
+    return { x1: minX, y1: minY, x2: maxX, y2: maxY };
+  } else if (x1 < x2 || (x1 === x2 && y1 < y2)) {
+    return { x1, x2, y1, y2 };
+  } else {
+    return { x1: x2, x2: x1, y1: y2, y2: y1 };
+  }
+};
 const App = () => {
   const [elements, setElements] = useState([]);
   const [clicked, setClicked] = useState("none");
@@ -114,6 +128,13 @@ const App = () => {
   };
 
   const handle_mouse_up = () => {
+    const { id, type } = elements[elements.length - 1];
+    if (clicked === "draw") {
+      const { x1, y1, x2, y2 } = changeCoordinates(
+        elements[elements.length - 1]
+      );
+      updateelement(id, x1, y1, x2, y2, type);
+    }
     setClicked("none");
     setSelected(null);
   };
