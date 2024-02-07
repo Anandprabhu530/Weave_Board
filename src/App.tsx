@@ -106,8 +106,30 @@ const cursorposition = (position) => {
   }
 };
 
+const useHistory = (initialState) => {
+  const [index, setIndex] = useState(0);
+  const [history, setHistory] = useState([initialState]);
+  const setstate = (action, payload: false) => {
+    const newstate =
+      typeof action === "function" ? action(history[index]) : action;
+    if (payload) {
+      const copy_of_History = [...history];
+      copy_of_History[index] = newstate;
+      setHistory(copy_of_History);
+    } else {
+      const updatedstate = [...history].slice(0, index + 1);
+      setHistory([...updatedstate, newstate]);
+      setIndex((prev) => prev + 1);
+    }
+  };
+
+  const undo = () => index > 0 && setIndex((prev) => prev - 1);
+  const redo = () => index < history.length - 1 && setIndex((prev) => prev + 1);
+  return [history[index], setstate, undo, redo];
+};
+
 const App = () => {
-  const [elements, setElements] = useState([]);
+  const [elements, setElements, undo, redo] = useHistory([]);
   const [clicked, setClicked] = useState("none");
   const [tool, setTool] = useState("Line");
   const [selected, setSelected] = useState(null);
@@ -124,18 +146,18 @@ const App = () => {
     const updatedelement = createDrawing(id, x1, y1, x2, y2, type);
     const copy_ofelements = [...elements];
     copy_ofelements[id] = updatedelement;
-    setElements(copy_ofelements);
+    setElements(copy_ofelements, true);
   };
 
   const handle_mouse_down = (event: MouseEvent) => {
     const { clientX, clientY } = event;
-
     if (tool === "select") {
       const data = getElementPosition(clientX, clientY, elements);
       if (data) {
         const offsetx = clientX - data.x1;
         const offsety = clientY - data.y1;
         setSelected({ ...data, offsetx, offsety });
+        setElements((prev) => prev);
         if (data.position === "inside") {
           setClicked("moving");
         } else {
@@ -246,6 +268,36 @@ const App = () => {
               strokeLinecap="round"
               strokeLinejoin="round"
               d="M16.5 8.25V6a2.25 2.25 0 0 0-2.25-2.25H6A2.25 2.25 0 0 0 3.75 6v8.25A2.25 2.25 0 0 0 6 16.5h2.25m8.25-8.25H18a2.25 2.25 0 0 1 2.25 2.25V18A2.25 2.25 0 0 1 18 20.25h-7.5A2.25 2.25 0 0 1 8.25 18v-1.5m8.25-8.25h-6a2.25 2.25 0 0 0-2.25 2.25v6"
+            />
+          </svg>
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            fill="none"
+            viewBox="0 0 24 24"
+            strokeWidth={1.5}
+            stroke="currentColor"
+            onClick={undo}
+            className="w-6 h-6 cursor-pointer"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              d="m18.75 4.5-7.5 7.5 7.5 7.5m-6-15L5.25 12l7.5 7.5"
+            />
+          </svg>
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            fill="none"
+            viewBox="0 0 24 24"
+            strokeWidth={1.5}
+            stroke="currentColor"
+            onClick={redo}
+            className="w-6 h-6 cursor-pointer"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              d="m5.25 4.5 7.5 7.5-7.5 7.5m6-15 7.5 7.5-7.5 7.5"
             />
           </svg>
         </div>
