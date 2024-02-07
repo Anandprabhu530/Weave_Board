@@ -22,23 +22,36 @@ const createDrawing = (
 };
 
 const getElementPosition = (x, y, elements) => {
-  return elements.find((element) => lieswithinmouse(x, y, element));
+  return elements
+    .map((element) => ({
+      ...element,
+      position: lieswithinmouse(x, y, element),
+    }))
+    .find((element) => element.position !== null);
+};
+
+const nearpoint = (x, y, x1, y1, name) => {
+  return Math.abs(x - x1) < 5 && Math.abs(y - y1) < 5 ? name : null;
 };
 
 const lieswithinmouse = (x, y, element) => {
   const { type, x1, x2, y1, y2 } = element;
   if (type === "Rectangle") {
-    const minX = Math.min(x1, x2);
-    const minY = Math.min(y1, y2);
-    const maxX = Math.max(x1, x2);
-    const maxY = Math.max(y1, y2);
-    return x >= minX && x <= maxX && y >= minY && y <= maxY;
+    const topleft = nearpoint(x, y, x1, y1, "tl");
+    const topright = nearpoint(x, y, x2, y1, "tr");
+    const bottomleft = nearpoint(x, y, x1, y2, "bl");
+    const bottomright = nearpoint(x, y, x2, y2, "br");
+    const inside = x >= x1 && x <= x2 && y >= y1 && y <= y2 ? "inside" : null;
+    return topleft || topright || bottomleft || bottomright || inside;
   } else {
     const a = { x: x1, y: y1 };
     const b = { x: x2, y: y2 };
     const c = { x, y };
+    const top = nearpoint(x, y, x1, y1, "top");
+    const bottom = nearpoint(x, y, x2, y2, "bottom");
     const offset = distance(a, b) - (distance(a, c) + distance(b, c));
-    return Math.abs(offset) < 1;
+    const inside = Math.abs(offset) < 1 ? "inside" : null;
+    return top || bottom || inside;
   }
 };
 
@@ -59,6 +72,40 @@ const changeCoordinates = (element) => {
     return { x1: x2, x2: x1, y1: y2, y2: y1 };
   }
 };
+
+const rezisefn = (clientX, clientY, position, coordinates) => {
+  const { x1, y1, x2, y2 } = coordinates;
+  switch (position) {
+    case "tl":
+    case "top":
+      return { x1: clientX, y1: clientY, x2, y2 };
+    case "tr":
+      return { x1, y1: clientY, x2: clientX, y2 };
+    case "bl":
+      return { x1: clientX, x2, y1, y2: clientY };
+    case "br":
+    case "bottom":
+      return { x1, y1, x2: clientX, y2: clientY };
+    default:
+      return null;
+  }
+};
+
+const cursorposition = (position) => {
+  switch (position) {
+    case "tl":
+    case "br":
+    case "top":
+    case "bottom":
+      return "nwse-resize";
+    case "tr":
+    case "bl":
+      return "nesw-resize";
+    default:
+      return "move";
+  }
+};
+
 const App = () => {
   const [elements, setElements] = useState([]);
   const [clicked, setClicked] = useState("none");
@@ -89,7 +136,11 @@ const App = () => {
         const offsetx = clientX - data.x1;
         const offsety = clientY - data.y1;
         setSelected({ ...data, offsetx, offsety });
-        setClicked("moving");
+        if (data.position === "inside") {
+          setClicked("moving");
+        } else {
+          setClicked("resize");
+        }
       }
     } else {
       const id = elements.length;
@@ -103,6 +154,7 @@ const App = () => {
         tool
       );
       setElements((prevstate) => [...prevstate, element]);
+      setSelected(element);
       setClicked("draw");
     }
   };
@@ -110,8 +162,9 @@ const App = () => {
   const handle_mouse_move = (event: MouseEvent) => {
     const { clientX, clientY } = event;
     if (tool === "select") {
-      event.target.style.cursor = getElementPosition(clientX, clientY, elements)
-        ? "move"
+      const element = getElementPosition(clientX, clientY, elements);
+      event.target.style.cursor = element
+        ? cursorposition(element.position)
         : "default";
     }
     if (clicked === "draw") {
@@ -124,19 +177,30 @@ const App = () => {
       const newx1 = clientX - offsetx;
       const newy1 = clientY - offsety;
       updateelement(id, newx1, newy1, newx1 + width, newy1 + height, type);
+    } else if (clicked === "resize") {
+      const { id, type, position, ...coordinates } = selected;
+      const { x1, y1, x2, y2 } = rezisefn(
+        clientX,
+        clientY,
+        position,
+        coordinates
+      );
+      updateelement(id, x1, y1, x2, y2, type);
     }
   };
 
   const handle_mouse_up = () => {
-    const { id, type } = elements[elements.length - 1];
-    if (clicked === "draw") {
-      const { x1, y1, x2, y2 } = changeCoordinates(
-        elements[elements.length - 1]
-      );
-      updateelement(id, x1, y1, x2, y2, type);
+    if (selected) {
+      const { id, type } = selected;
+      if (clicked === "draw" || clicked === "resize") {
+        const { x1, y1, x2, y2 } = changeCoordinates(
+          elements[elements.length - 1]
+        );
+        updateelement(id, x1, y1, x2, y2, type);
+      }
+      setClicked("none");
+      setSelected(null);
     }
-    setClicked("none");
-    setSelected(null);
   };
 
   return (
