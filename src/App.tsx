@@ -26,6 +26,8 @@ const createDrawing = (
       return { id, x1, y1, x2, y2, roughelement, type };
     case "Pencil":
       return { id, type, points: [{ x: x1, y: y1 }] };
+    case "Text":
+      return { id, type, x1, y1, text };
     default:
       throw new Error(`Type does not exists : ${type}`);
   }
@@ -44,24 +46,38 @@ const nearpoint = (x, y, x1, y1, name) => {
   return Math.abs(x - x1) < 5 && Math.abs(y - y1) < 5 ? name : null;
 };
 
+const insideline = (x1, y1, x2, y2, x, y) => {
+  const a = { x: x1, y: y1 };
+  const b = { x: x2, y: y2 };
+  const c = { x, y };
+  const offset = distance(a, b) - (distance(a, c) + distance(b, c));
+  return Math.abs(offset) < 4 ? "inside" : null;
+};
+
 const lieswithinmouse = (x, y, element) => {
   const { type, x1, x2, y1, y2 } = element;
-  if (type === "Rectangle") {
-    const topleft = nearpoint(x, y, x1, y1, "tl");
-    const topright = nearpoint(x, y, x2, y1, "tr");
-    const bottomleft = nearpoint(x, y, x1, y2, "bl");
-    const bottomright = nearpoint(x, y, x2, y2, "br");
-    const inside = x >= x1 && x <= x2 && y >= y1 && y <= y2 ? "inside" : null;
-    return topleft || topright || bottomleft || bottomright || inside;
-  } else {
-    const a = { x: x1, y: y1 };
-    const b = { x: x2, y: y2 };
-    const c = { x, y };
-    const top = nearpoint(x, y, x1, y1, "top");
-    const bottom = nearpoint(x, y, x2, y2, "bottom");
-    const offset = distance(a, b) - (distance(a, c) + distance(b, c));
-    const inside = Math.abs(offset) < 1 ? "inside" : null;
-    return top || bottom || inside;
+  switch (type) {
+    case "Line":
+      const innerpoint = insideline(x1, y1, x2, y2, x, y);
+      const top = nearpoint(x, y, x1, y1, "top");
+      const bottom = nearpoint(x, y, x2, y2, "bottom");
+      return top || bottom || innerpoint;
+    case "Rectangle":
+      const topleft = nearpoint(x, y, x1, y1, "tl");
+      const topright = nearpoint(x, y, x2, y1, "tr");
+      const bottomleft = nearpoint(x, y, x1, y2, "bl");
+      const bottomright = nearpoint(x, y, x2, y2, "br");
+      const inside = x >= x1 && x <= x2 && y >= y1 && y <= y2 ? "inside" : null;
+      return topleft || topright || bottomleft || bottomright || inside;
+    case "Pencil":
+      const betweenpoints = element.points.some((point, index) => {
+        const nextpoint = element.points[index + 1];
+        if (!nextpoint) return;
+        return insideline(point.x, point.y, nextpoint.x, nextpoint.y, x, y);
+      });
+      return betweenpoints ? "inside" : null;
+    default:
+      throw new Error("Type not defined");
   }
 };
 
@@ -181,6 +197,10 @@ const drawElement = (roughCanvas, context, element) => {
       const myPath = new Path2D(pathData);
       context.fill(myPath);
       break;
+    case "Text":
+      context.font = "24px sans-serif";
+      context.fillText(element.text, element.x1, element.y1);
+      break;
     default:
       throw new Error("Element Not found");
   }
@@ -189,7 +209,7 @@ const drawElement = (roughCanvas, context, element) => {
 const App = () => {
   const [elements, setElements, undo, redo] = useHistory([]);
   const [clicked, setClicked] = useState("none");
-  const [tool, setTool] = useState("Line");
+  const [tool, setTool] = useState("Text");
   const [selected, setSelected] = useState(null);
 
   useLayoutEffect(() => {
@@ -213,6 +233,8 @@ const App = () => {
           { x: x2, y: y2 },
         ];
         break;
+      case "Text":
+        break;
       default:
         throw new Error("Type Not recognized");
     }
@@ -224,9 +246,15 @@ const App = () => {
     if (tool === "select") {
       const element = getElementPosition(clientX, clientY, elements);
       if (element) {
-        const offsetx = clientX - element.x1;
-        const offsety = clientY - element.y1;
-        setSelected({ ...element, offsetx, offsety });
+        if (element.type === "Pencil") {
+          const xoffsets = element.points.map((point) => clientX - point.x);
+          const yoffsets = element.points.map((point) => clientY - point.y);
+          setSelected({ ...element, xoffsets, yoffsets });
+        } else {
+          const offsetx = clientX - element.x1;
+          const offsety = clientY - element.y1;
+          setSelected({ ...element, offsetx, offsety });
+        }
         setElements((prev) => prev);
         if (element.position === "inside") {
           setClicked("moving");
@@ -246,7 +274,7 @@ const App = () => {
       );
       setElements((prevstate) => [...prevstate, element]);
       setSelected(element);
-      setClicked("draw");
+      setClicked(tool === "Text" ? "write" : "draw");
     }
   };
 
@@ -259,15 +287,31 @@ const App = () => {
         : "default";
     }
     if (clicked === "draw") {
-      const { x1, y1 } = elements[elements.length - 1];
-      updateelement(elements.length - 1, x1, y1, clientX, clientY, tool);
+      const index = elements.length - 1;
+      const { x1, y1 } = elements[index];
+      updateelement(index, x1, y1, clientX, clientY, tool);
     } else if (clicked === "moving") {
-      const { id, x1, y1, x2, y2, type, offsetx, offsety } = selected;
-      const width = x2 - x1;
-      const height = y2 - y1;
-      const newx1 = clientX - offsetx;
-      const newy1 = clientY - offsety;
-      updateelement(id, newx1, newy1, newx1 + width, newy1 + height, type);
+      if (selected.type === "Pencil") {
+        const newpoints = selected.points.map((_, index) => {
+          return {
+            x: clientX - selected.xoffsets[index],
+            y: clientY - selected.yoffsets[index],
+          };
+        });
+        const copy_of_elements = [...elements];
+        copy_of_elements[selected.id] = {
+          ...copy_of_elements[selected.id],
+          points: newpoints,
+        };
+        setElements(copy_of_elements, true);
+      } else {
+        const { id, x1, y1, x2, y2, type, offsetx, offsety } = selected;
+        const width = x2 - x1;
+        const height = y2 - y1;
+        const newx1 = clientX - offsetx;
+        const newy1 = clientY - offsety;
+        updateelement(id, newx1, newy1, newx1 + width, newy1 + height, type);
+      }
     } else if (clicked === "resize") {
       const { id, type, position, ...coordinates } = selected;
       const { x1, y1, x2, y2 } = rezisefn(
@@ -387,8 +431,24 @@ const App = () => {
               d="m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L6.832 19.82a4.5 4.5 0 0 1-1.897 1.13l-2.685.8.8-2.685a4.5 4.5 0 0 1 1.13-1.897L16.863 4.487Zm0 0L19.5 7.125"
             />
           </svg>
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            fill="none"
+            viewBox="0 0 24 24"
+            strokeWidth={1.5}
+            stroke="currentColor"
+            className="w-6 h-6 cursor-pointer"
+            onClick={() => setTool("Text")}
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              d="M7.5 8.25h9m-9 3H12m-9.75 1.51c0 1.6 1.123 2.994 2.707 3.227 1.129.166 2.27.293 3.423.379.35.026.67.21.865.501L12 21l2.755-4.133a1.14 1.14 0 0 1 .865-.501 48.172 48.172 0 0 0 3.423-.379c1.584-.233 2.707-1.626 2.707-3.228V6.741c0-1.602-1.123-2.995-2.707-3.228A48.394 48.394 0 0 0 12 3c-2.392 0-4.744.175-7.043.513C3.373 3.746 2.25 5.14 2.25 6.741v6.018Z"
+            />
+          </svg>
         </div>
       </div>
+      <textarea className="fixed top-[100px] border border-black left-[100px]" />
       <canvas
         id="canvas"
         onMouseDown={handle_mouse_down}
