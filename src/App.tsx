@@ -215,6 +215,7 @@ const App = () => {
   const [tool, setTool] = useState("Text");
   const [selected, setSelected] = useState(null);
   const [pan, SetPan] = useState({ x: 0, y: 0 });
+  const [startposition, setStartposition] = useState({ x: 0, y: 0 });
   const ReftToTextArea = useRef();
 
   useLayoutEffect(() => {
@@ -242,6 +243,19 @@ const App = () => {
       }, 0);
     }
   }, [clicked, selected]);
+
+  useEffect(() => {
+    const panfunction = (event) => {
+      SetPan((prev) => ({
+        x: prev.x - event.deltaX,
+        y: prev.y - event.deltaY,
+      }));
+    };
+    document.addEventListener("wheel", panfunction);
+    return () => {
+      document.removeEventListener("wheel", panfunction);
+    };
+  }, []);
 
   const updateelement = (id, x1, y1, x2, y2, type, options) => {
     const copy_ofelements = [...elements];
@@ -283,6 +297,12 @@ const App = () => {
   const handle_mouse_down = (event: MouseEvent) => {
     if (clicked === "write") return;
     const { clientX, clientY } = getPanCoordinates(event);
+
+    if (event.button === 1) {
+      setClicked("pan");
+      setStartposition({ x: clientX, y: clientY });
+      return;
+    }
     if (tool === "select") {
       const element = getElementPosition(clientX, clientY, elements);
       if (element) {
@@ -323,8 +343,15 @@ const App = () => {
     const clientY = event.clientY - pan.y;
     return { clientX, clientY };
   };
+
   const handle_mouse_move = (event: MouseEvent) => {
     const { clientX, clientY } = getPanCoordinates(event);
+    if (clicked === "pan") {
+      const X = clientX - startposition.x;
+      const Y = clientY - startposition.y;
+      SetPan((prev) => ({ x: prev.x + X, y: prev.y + Y }));
+      return;
+    }
     if (tool === "select") {
       const element = getElementPosition(clientX, clientY, elements);
       event.target.style.cursor = element
@@ -414,8 +441,8 @@ const App = () => {
 
   return (
     <div>
-      <div className="fixed flex  w-full pt-6 justify-center">
-        <div className="flex gap-10 p-4 border border-black rounded-xl">
+      <div className="fixed flex  w-full pt-6 justify-center z-[2]">
+        <div className="flex gap-10 p-4 border border-black rounded-xl z-[2]">
           <svg
             onClick={() => setTool("select")}
             xmlns="http://www.w3.org/2000/svg"
@@ -525,8 +552,8 @@ const App = () => {
           onBlur={ClickedAway}
           style={{
             position: "fixed",
-            top: selected.y1 - 3,
-            left: selected.x1,
+            top: selected.y1 - 3 + pan.y,
+            left: selected.x1 + pan.x,
             font: "24px sans-serif",
             outline: 0,
             resize: "auto",
@@ -543,6 +570,7 @@ const App = () => {
         onMouseMove={handle_mouse_move}
         width={window.innerWidth}
         height={window.innerHeight}
+        className="absolute z-[1]"
       >
         Canvas
       </canvas>
