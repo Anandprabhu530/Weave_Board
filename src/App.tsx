@@ -214,21 +214,24 @@ const App = () => {
   const [clicked, setClicked] = useState("none");
   const [tool, setTool] = useState("Text");
   const [selected, setSelected] = useState(null);
+  const [pan, SetPan] = useState({ x: 0, y: 0 });
   const ReftToTextArea = useRef();
 
   useLayoutEffect(() => {
     const canvas = document.getElementById("canvas");
     const context = canvas?.getContext("2d");
-    context.clearRect(0, 0, canvas?.clientWidth, canvas?.height);
     const roughCanvas = rough.canvas(canvas);
-
+    context.clearRect(0, 0, canvas?.clientWidth, canvas?.height);
+    context.save();
+    context.translate(pan.x, pan.y);
     elements.forEach((element) => {
       if (clicked === "write" && selected.id === element.id) {
         return;
       }
       drawElement(roughCanvas, context, element);
     });
-  }, [elements, selected, clicked]);
+    context.restore();
+  }, [elements, selected, clicked, pan]);
 
   useEffect(() => {
     const textArea = ReftToTextArea.current;
@@ -279,7 +282,7 @@ const App = () => {
 
   const handle_mouse_down = (event: MouseEvent) => {
     if (clicked === "write") return;
-    const { clientX, clientY } = event;
+    const { clientX, clientY } = getPanCoordinates(event);
     if (tool === "select") {
       const element = getElementPosition(clientX, clientY, elements);
       if (element) {
@@ -315,8 +318,13 @@ const App = () => {
     }
   };
 
+  const getPanCoordinates = (event) => {
+    const clientX = event.clientX - pan.x;
+    const clientY = event.clientY - pan.y;
+    return { clientX, clientY };
+  };
   const handle_mouse_move = (event: MouseEvent) => {
-    const { clientX, clientY } = event;
+    const { clientX, clientY } = getPanCoordinates(event);
     if (tool === "select") {
       const element = getElementPosition(clientX, clientY, elements);
       event.target.style.cursor = element
