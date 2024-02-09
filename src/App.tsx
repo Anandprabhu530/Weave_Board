@@ -3,7 +3,7 @@
 // @ts-nocheck
 
 import rough from "roughjs";
-import { useLayoutEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { getStroke } from "perfect-freehand";
 
 const generator = rough.generator();
@@ -27,7 +27,7 @@ const createDrawing = (
     case "Pencil":
       return { id, type, points: [{ x: x1, y: y1 }] };
     case "Text":
-      return { id, type, x1, y1, text };
+      return { id, type, x1, y1, x2, y2, text: "" };
     default:
       throw new Error(`Type does not exists : ${type}`);
   }
@@ -76,6 +76,8 @@ const lieswithinmouse = (x, y, element) => {
         return insideline(point.x, point.y, nextpoint.x, nextpoint.y, x, y);
       });
       return betweenpoints ? "inside" : null;
+    case "Text":
+      return x >= x1 && x <= x2 && y >= y1 && y <= y2 ? "inside" : null;
     default:
       throw new Error("Type not defined");
   }
@@ -198,6 +200,7 @@ const drawElement = (roughCanvas, context, element) => {
       context.fill(myPath);
       break;
     case "Text":
+      context.textBaseline = "top";
       context.font = "24px sans-serif";
       context.fillText(element.text, element.x1, element.y1);
       break;
@@ -211,16 +214,33 @@ const App = () => {
   const [clicked, setClicked] = useState("none");
   const [tool, setTool] = useState("Text");
   const [selected, setSelected] = useState(null);
+  const ReftToTextArea = useRef();
 
   useLayoutEffect(() => {
     const canvas = document.getElementById("canvas");
     const context = canvas?.getContext("2d");
     context.clearRect(0, 0, canvas?.clientWidth, canvas?.height);
     const roughCanvas = rough.canvas(canvas);
-    elements.forEach((element) => drawElement(roughCanvas, context, element));
-  }, [elements]);
 
-  const updateelement = (id, x1, y1, x2, y2, type) => {
+    elements.forEach((element) => {
+      if (clicked === "write" && selected.id === element.id) {
+        return;
+      }
+      drawElement(roughCanvas, context, element);
+    });
+  }, [elements, selected, clicked]);
+
+  useEffect(() => {
+    const textArea = ReftToTextArea.current;
+    if (clicked === "write") {
+      setTimeout(() => {
+        textArea.focus();
+        textArea.value = selected.text;
+      }, 0);
+    }
+  }, [clicked, selected]);
+
+  const updateelement = (id, x1, y1, x2, y2, type, options) => {
     const copy_ofelements = [...elements];
     switch (type) {
       case "Line":
@@ -234,6 +254,22 @@ const App = () => {
         ];
         break;
       case "Text":
+        const width_of_text = document
+          .getElementById("canvas")
+          .getContext("2d")
+          .measureText(options.text).width;
+        const height_of_text = 24;
+        copy_ofelements[id] = {
+          ...createDrawing(
+            id,
+            x1,
+            y1,
+            x1 + width_of_text,
+            y1 + height_of_text,
+            type
+          ),
+          text: options.text,
+        };
         break;
       default:
         throw new Error("Type Not recognized");
@@ -242,6 +278,7 @@ const App = () => {
   };
 
   const handle_mouse_down = (event: MouseEvent) => {
+    if (clicked === "write") return;
     const { clientX, clientY } = event;
     if (tool === "select") {
       const element = getElementPosition(clientX, clientY, elements);
@@ -310,7 +347,16 @@ const App = () => {
         const height = y2 - y1;
         const newx1 = clientX - offsetx;
         const newy1 = clientY - offsety;
-        updateelement(id, newx1, newy1, newx1 + width, newy1 + height, type);
+        const options = type === "Text" ? { text: selected.text } : {};
+        updateelement(
+          id,
+          newx1,
+          newy1,
+          newx1 + width,
+          newy1 + height,
+          type,
+          options
+        );
       }
     } else if (clicked === "resize") {
       const { id, type, position, ...coordinates } = selected;
@@ -324,8 +370,17 @@ const App = () => {
     }
   };
 
-  const handle_mouse_up = () => {
+  const handle_mouse_up = (event) => {
+    const { clientX, clientY } = event;
     if (selected) {
+      if (
+        selected.type === "Text" &&
+        clientX - selected.offsetx === selected.x1 &&
+        clientY - selected.offsety === selected.y1
+      ) {
+        setClicked("write");
+        return;
+      }
       const { id, type } = selected;
       if (
         (clicked === "draw" || clicked === "resize") &&
@@ -336,9 +391,17 @@ const App = () => {
         );
         updateelement(id, x1, y1, x2, y2, type);
       }
+      if (clicked === "write") return;
       setClicked("none");
       setSelected(null);
     }
+  };
+
+  const ClickedAway = (event) => {
+    const { id, x1, y1, type } = selected;
+    setClicked("none");
+    setSelected(null);
+    updateelement(id, x1, y1, null, null, type, { text: event?.target.value });
   };
 
   return (
@@ -448,7 +511,23 @@ const App = () => {
           </svg>
         </div>
       </div>
-      <textarea className="fixed top-[100px] border border-black left-[100px]" />
+      {clicked === "write" ? (
+        <textarea
+          className="m-0 p-0 b-0 bg-transparent"
+          onBlur={ClickedAway}
+          style={{
+            position: "fixed",
+            top: selected.y1 - 3,
+            left: selected.x1,
+            font: "24px sans-serif",
+            outline: 0,
+            resize: "auto",
+            overflow: "hidden",
+            whiteSpace: "pre",
+          }}
+          ref={ReftToTextArea}
+        />
+      ) : null}
       <canvas
         id="canvas"
         onMouseDown={handle_mouse_down}
