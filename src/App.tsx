@@ -1,7 +1,3 @@
-/* eslint-disable no-case-declarations */
-// eslint-disable-next-line @typescript-eslint/ban-ts-comment
-// @ts-nocheck
-
 import rough from "roughjs";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { getStroke } from "perfect-freehand";
